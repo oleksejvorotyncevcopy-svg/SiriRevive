@@ -2,19 +2,19 @@ name: Build SiriRevive Windows EXE
 
 on:
   push:
-    branches: [ "main" ] # Запускать сборку при каждом обновлении кода
-  workflow_dispatch: # Позволяет запускать сборку кнопкой вручную
+    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest # Просим у GitHub сервер на Windows!
+    runs-on: windows-latest
 
     steps:
     - name: Скачиваем код из репозитория
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Устанавливаем Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
@@ -28,7 +28,7 @@ jobs:
         pyinstaller --noconsole --onefile --add-data "guzzoni.crt;." --add-data "guzzoni.key;." --add-data "libspeex.dll;." SiriRevive.py
 
     - name: Сохраняем готовый EXE
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: SiriRevive_Windows_EXE
         path: dist/SiriRevive.exe
