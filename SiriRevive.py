@@ -78,28 +78,61 @@ def run_full_server(ip_address, api_key):
         groq_client = Groq(api_key=api_key)
 
         def dns_logic():
-            dns_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            dns_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            dns_sock.bind(('0.0.0.0', 53))
-            server_sockets.append(dns_sock)
+            try:
+                dns_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                dns_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                dns_sock.bind(('0.0.0.0', 53))
+                server_sockets.append(dns_sock)
+                while is_running:
+                    try:
+                        dns_sock.settimeout(1.0)
+                        data, addr = dns_sock.recvfrom(512)
+                        request = DNSRecord.parse(data)
+                        qname = str(request.q.qname)
+                        if "guzzoni.apple.com" in qname:
+                            reply = request.reply()
+                            reply.add_answer(RR(qname, QTYPE.A, rdata=A(ip_address), ttl=60))
+                            dns_sock.sendto(reply.pack(), addr)
+                        else:
+                            up = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                            up.sendto(data, ('8.8.8.8', 53))
+                            dns_sock.sendto(up.recvfrom(512)[0], addr)
+                    except: continue
+                dns_sock.close()
+            except Exception as e:
+                print(f"DNS Server Error: {e}")
+
+        def http_logic():
+            port = 80
+            http_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            http_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                http_sock.bind(('0.0.0.0', port))
+            except:
+                port = 1337
+                http_sock.bind(('0.0.0.0', port))
+            
+            http_sock.listen(5)
+            server_sockets.append(http_sock)
+            print(f"CERTIFICATE SERVER active at http://{ip_address}:{port}")
+
             while is_running:
                 try:
-                    dns_sock.settimeout(1.0)
-                    data, addr = dns_sock.recvfrom(512)
-                    request = DNSRecord.parse(data)
-                    qname = str(request.q.qname)
-                    if "guzzoni.apple.com" in qname:
-                        reply = request.reply()
-                        reply.add_answer(RR(qname, QTYPE.A, rdata=A(ip_address), ttl=60))
-                        dns_sock.sendto(reply.pack(), addr)
-                    else:
-                        up = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                        up.sendto(data, ('8.8.8.8', 53))
-                        dns_sock.sendto(up.recvfrom(512)[0], addr)
+                    http_sock.settimeout(1.0)
+                    conn, addr = http_sock.accept()
+                    req = conn.recv(1024)
+                    if b"GET" in req:
+                        with open(resource_path('guzzoni.crt'), 'rb') as f:
+                            cert_data = f.read()
+                        resp = (b"HTTP/1.1 200 OK\r\nContent-Type: application/x-x509-ca-cert\r\n"
+                                b"Content-Length: " + str(len(cert_data)).encode() + b"\r\n\r\n" + cert_data)
+                        conn.sendall(resp)
+                    conn.close()
                 except: continue
-            dns_sock.close()
+            http_sock.close()
 
         threading.Thread(target=dns_logic, daemon=True).start()
+        threading.Thread(target=http_logic, daemon=True).start()
 
         context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         context.load_cert_chain(certfile=resource_path('guzzoni.crt'), keyfile=resource_path('guzzoni.key'))
@@ -110,7 +143,8 @@ def run_full_server(ip_address, api_key):
         server_sockets.append(main_sock)
         main_sock.settimeout(1.0)
         
-        print(f"Server active on {ip_address}")
+        print(f"SIRI SERVER active on {ip_address}:443")
+       
 
         while is_running:
             try:
